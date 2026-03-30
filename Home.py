@@ -9,32 +9,20 @@ st.set_page_config(
 st.markdown("""
     <style>
     .stApp {
-        background-color: #f1f5f9;
+        background-color: #f8fafc;
     }
     section[data-testid="stSidebar"] {
-        background-color: #064e3b;
-    }
-    section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p {
-        color: white !important;
+        background-color: #f1f5f9;
     }
     .main .block-container {
         padding-top: 2rem;
     }
     div.stButton > button:first-child {
-        background-color: #15803d;
-        color: white;
-        border: 2px solid #14532d;
-        font-weight: bold;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-    }
-    div.stButton > button:first-child:hover {
         background-color: #166534;
-        border-color: #15803d;
+        color: white;
     }
     h1 {
-        color: #15803d;
-        font-weight: 800;
-        text-transform: uppercase;
+        color: #166534;
     }
     </style>
 """, unsafe_allow_html=True)

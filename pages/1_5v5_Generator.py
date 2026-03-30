@@ -30,34 +30,24 @@ st.set_page_config(page_title="Soccer Lineup Generator", layout="wide")
 st.markdown("""
     <style>
     .stApp {
-        background-color: #f1f5f9;
+        background-color: #f8fafc;
     }
     section[data-testid="stSidebar"] {
-        background-color: #064e3b;
-    }
-    section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p {
-        color: white !important;
-    }
-    h1, h2, h3 {
-        color: #15803d;
-        font-weight: 800;
+        background-color: #f1f5f9;
     }
     div.stButton > button:first-child {
-        background-color: #15803d;
+        background-color: #166534;
         color: white;
-        border: 2px solid #14532d;
-        font-weight: bold;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        border: none;
     }
     thead tr th {
-        background-color: #15803d !important;
+        background-color: #166534 !important;
         color: white !important;
-        text-transform: uppercase;
     }
     .stDownloadButton > button {
         background-color: #ffffff;
-        border: 2px solid #15803d !important;
-        color: #15803d !important;
+        border: 1px solid #166534 !important;
+        color: #166534 !important;
     }
     </style>
 """, unsafe_allow_html=True)
