@@ -28,8 +28,6 @@ st.set_page_config(page_title="Soccer Lineup Generator", layout="wide")
 # --- APP STATE INITIALIZATION ---
 if 'seed' not in st.session_state:
     st.session_state.seed = random.randint(1000, 9999)
-if 'manual_swaps' not in st.session_state:
-    st.session_state.manual_swaps = []
 if 'manual_swaps_5v5' not in st.session_state:
     st.session_state.manual_swaps_5v5 = []
 
@@ -46,7 +44,6 @@ roster = [p.strip() for p in roster_raw.split(",") if p.strip()]
 
 if st.sidebar.button("Generate New Random Rotation"):
     st.session_state.seed = random.randint(1000, 9999)
-    st.session_state.manual_swaps = []
     st.session_state.manual_swaps_5v5 = []
 
 team_name = st.sidebar.text_input("Team Name", st.session_state.get('team_name', "Your Team"), key='team_name')
@@ -230,15 +227,12 @@ with st.expander("Manual Swaps"):
     with col4: p2 = st.selectbox("Player 2", attending, key="p2")
     
     if st.button("Swap Players"):
-        st.session_state.manual_swaps.append({'q': q_swap, 'b': b_swap, 'p1': p1, 'p2': p2})
         st.session_state.manual_swaps_5v5.append({'q': q_swap, 'b': b_swap, 'p1': p1, 'p2': p2})
 
     if st.button("Reset All Swaps"):
-        st.session_state.manual_swaps = []
         st.session_state.manual_swaps_5v5 = []
 
 # Apply manual swaps
-for swap in st.session_state.manual_swaps:
 for swap in st.session_state.manual_swaps_5v5:
     idx = (swap['q']-1)*2 + (swap['b']-1)
     l = lineups[idx]
@@ -272,8 +266,6 @@ for i, l in enumerate(lineups):
         l['SubsOff'] = sorted([p for p in prev_active if p not in active])
     if i % 2 == 0:
         for p in active: hp_stats[p] += 1
-    for p in attending:
-        if p in active: participation[p] += 1
         # Goalkeeper counts as 1 period for the entire quarter (2 blocks)
         participation[l['GK']] += 1
 
