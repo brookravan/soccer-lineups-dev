@@ -27,8 +27,8 @@ This is a mostly complete Python project that generates youth soccer lineups for
 - Each quarter is split into 2 substitution periods
 - Results in 8 substitution periods per game
 - Goalkeepers play one full quarter each
-- Formations are defined in `FORMATION_CONFIGS` and follow soccer convention: defense|midfield|forwards with goalkeeper implied (e.g. 220 = 2 defenders, 2 midfielders, 0 forwards, plus goalkeeper)
-- Available 5v5 formations include 220 and 121
+- Formations are defined in `FORMATION_CONFIGS` and follow soccer convention: defense|midfield|forwards with goalkeeper implied (e.g. 2-2-0 = 2 defenders, 2 midfielders, 0 forwards, plus goalkeeper)
+- Available 5v5 formations: `2-2-0` and `1-2-1`
 
 **7v7 format**
 - 2 halves of 25 minutes each
@@ -36,12 +36,24 @@ This is a mostly complete Python project that generates youth soccer lineups for
 - Results in 4 substitution periods per half, 8 total per game
 - Goalkeepers play either a 15-minute or 10-minute shift per half (2 shifts per half) — the split can vary
 - Formations are defined in `FORMATION_CONFIGS` using the same defense|midfield|forwards convention
-- Available 7v7 formations: 321, 312, 222, 231, 213
+- Available 7v7 formations: `3-2-1`, `3-1-2`, `2-2-2`, `2-3-1`, `2-1-3`
 
 **Goalkeeper rules (both formats)**
 - Goalkeeper playing time is predetermined and fixed
 - Do not flag goalkeeper playing time as a fairness imbalance
 - Goalkeepers are excluded from split_pairs and synergy_pairs logic entirely
+
+**5v5 candidate selection sort order**
+Within `generate_rotation`, field player candidates are sorted by `(part_score[p], not sat_last[p], con_played[p] >= 2)` — ascending, so lowest values get highest priority:
+1. `part_score` — fewest participation credits first (primary, equal time is top priority)
+2. `not sat_last` — among ties, recently-rested players get priority (False sorts before True)
+3. `con_played >= 2` — consecutive-play limit as final tiebreaker
+
+**6-player edge case (5v5)**
+With exactly 6 attending players, the math works out to exactly 6 participation credits per player (36 total ÷ 6 players). The algorithm is designed to achieve this:
+- Players who served as GK for a quarter (1 credit) should sit exactly 1 field block in the remaining 6 blocks → 5 field + 1 GK = 6 total
+- Players who never play GK should sit exactly 2 field blocks across 8 blocks → 6 field = 6 total
+The `part_score` sort key is what makes this work — without it, GK players appear falsely caught up because `total_played` counts their 2 GK blocks as 2 credits instead of 1.
 
 ## Key variables
 
@@ -56,6 +68,8 @@ This is a mostly complete Python project that generates youth soccer lineups for
 **`synergy_pairs`** — two players who should be on the field together whenever possible. Lower priority than playing time and split_pairs.
 
 **`FORMATION_CONFIGS`** — defines available formations for each format. Do not modify without explicit instruction.
+
+**`part_score`** (5v5 only, internal to `generate_rotation`) — tracks participation credits the same way the display table does: GK earns 1 credit for the whole quarter (credited on the first block only), field players earn 1 credit per block. This is the primary sort key for candidate selection — do not replace it with `total_played`, which counts every block equally and incorrectly overstates GK players' credit after their quarter. The 7v7 equivalent is `total_mins`, which already works correctly there.
 
 **Random seed** — included in lineup generation so coaches can recreate a specific lineup by re-entering the same seed, especially when combined with a saved JSON settings file.
 
