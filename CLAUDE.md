@@ -4,23 +4,71 @@
 This is a mostly complete Python project that generates youth soccer lineups for 5v5 and 7v7 formats, surfaced as a Streamlit app. The core logic is stable. Work at this stage is refinement, bug fixes, and UI improvements — not rebuilds.
 
 ## Project structure
-- `Home.py` — landing page for Streamlit - does very little beyond directing the user to the 5v5 and 7v7 lineup generators
-- `pages/1_5v5_Generator.py` — 5v5 lineup generation logic, constraint enforcement, player assignment, and format UI
-- `pages/2_7v7_Generator.py` — 7v7 lineup generation logic, constraint enforcement, player assignment, and format UI
-- These files are self-contained — do not split or restructure them
-  without explicit instruction
+- `pages/1_5v5_Generator.py` — all 5v5 logic, player selection, constraint enforcement, and Streamlit UI in one file
+- `pages/2_7v7_Generator.py` — all 7v7 logic, player selection, constraint enforcement, and Streamlit UI in one file
+- These files are self-contained — do not split or restructure them without explicit instruction
+- The 5v5 and 7v7 files follow the same general approach but are not identical — treat each file's implementation on its own terms
 
-## Domain rules (do not change without explicit instruction)
-The following constraints are built into each generator file. Never modify them unless I explicitly ask:
+## Game structure
 
-- Players must receive equal or near-equal playing time across the game
-- Players must receive adequate rest breaks (no player should play continuously without a break)
-- Players must play enough minutes to stay engaged (no player should sit for too long at a stretch)
-- Players should be assigned to their preferred positions where possible
-- Particularly strong players and particularly weak players should not be on the field together (to maintain balance)
-- These rules apply separately for 5v5 and 7v7 formats, which may have different implementations
-- For 5v5, a goalkeeper plays an entire quarter and this is treated as a single period of play for accounting
-- For 7v7, a goalkeeper plays either a 10 or 15 minute block, and these minutes are the equivalent of 10 to 15 field minutes
+**5v5 format**
+- 4 quarters of 10 minutes each
+- Each quarter is split into 2 substitution periods
+- Results in 8 substitution periods per game
+- Goalkeepers play one full quarter each
+- Formations are defined in `FORMATION_CONFIGS` and follow soccer convention: defense|midfield|forwards with goalkeeper implied (e.g. 220 = 2 defenders, 2 midfielders, 0 forwards, plus goalkeeper)
+- Available 5v5 formations include 220 and 121
+
+**7v7 format**
+- 2 halves of 25 minutes each
+- Substitutions occur at the 10, 15, and 20 minute mark of each half
+- Results in 4 substitution periods per half, 8 total per game
+- Goalkeepers play either a 15-minute or 10-minute shift per half (2 shifts per half) — the split can vary
+- Formations are defined in `FORMATION_CONFIGS` using the same defense|midfield|forwards convention
+- Available 7v7 formations: 321, 312, 222, 231, 213
+
+**Goalkeeper rules (both formats)**
+- Goalkeeper playing time is predetermined and fixed
+- Do not flag goalkeeper playing time as a fairness imbalance
+- Goalkeepers are excluded from split_pairs and synergy_pairs logic entirely
+
+## Key variables
+
+**`roster_raw`** — the full team roster. All players on the team regardless of attendance.
+
+**`player_ranks`** — a 3-digit number per player indicating position preference in defense|midfield|forward order. Example: 213 = prefers midfield, then defense, then forward. 132 = prefers defense, then forward, then midfield.
+
+**Attending players** — a subset of `roster_raw` selected via checkboxes in the Streamlit UI for each specific game. All lineup generation must use only this subset.
+
+**`split_pairs`** — two players who should not occupy non-goalkeeper positions in the same period. Used either because both are strong (spread their impact across periods) or both are weak (avoid periods where the team is uncompetitive). Honored only when playing time remains balanced — playing time takes priority.
+
+**`synergy_pairs`** — two players who should be on the field together whenever possible. Lower priority than playing time and split_pairs.
+
+**`FORMATION_CONFIGS`** — defines available formations for each format. Do not modify without explicit instruction.
+
+**Random seed** — included in lineup generation so coaches can recreate a specific lineup by re-entering the same seed, especially when combined with a saved JSON settings file.
+
+## Constraint priority order
+When constraints conflict, resolve in this order (highest to lowest):
+1. Equal or near-equal playing time for all field players
+2. Honoring split_pairs (keep these players in separate periods when possible)
+3. Honoring position preferences via player_ranks
+4. Honoring synergy_pairs (keep these players together when possible)
+
+## Manual overrides
+- Coaches can manually override any programmatic lineup suggestion via the Streamlit UI
+- Manual overrides are the final step and supersede all constraints and rules
+- After a manual override, the only automatic update that should occur is recalculation of the playing time table to reflect the changes
+- Do not attempt to re-apply constraints after a manual override
+
+## Persistent settings (JSON)
+- All settings can be saved to a local JSON file via a Streamlit download button and reloaded in a future session
+- The JSON saves: full roster and player_ranks, split_pairs, synergy_pairs, attending players, formation configs, and the random seed
+- This exists because re-entering all preferences each session is not practical — do not suggest workflows that require users to re-enter settings manually
+
+## Display components (do not modify without explicit instruction)
+- **mplsoccer + matplotlib** — renders a matrix of soccer fields showing player positions per period, with labels for substitutions and bench players. This is working correctly — do not touch it unless explicitly asked.
+- **Playing time table** — displayed at the bottom, shows each player's periods played (5v5) or minutes played (7v7). Must always reflect the final lineup including any manual overrides.
 
 ## How to work with me
 
@@ -44,3 +92,5 @@ If you are not confident about something — a Python library's behavior, a Stre
 - Do not refactor working code without being asked
 - Do not change constraint logic to "simplify" it without fully understanding the rule it enforces
 - Do not add new dependencies without flagging them first
+- Do not modify the mplsoccer display without being asked
+- Do not suggest re-entering settings that are already handled by the JSON save/load system
