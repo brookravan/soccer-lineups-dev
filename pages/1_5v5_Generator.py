@@ -145,7 +145,9 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
         for b in range(2):
             is_hp = (b == 0)
             candidates = [p for p in attending if p != gk]
-            candidates.sort(key=lambda p: (not sat_last[p], total_played[p], con_played[p] >= 2))
+            # Primary sort: fewest periods played first (equal time is top priority).
+            # sat_last is a tiebreaker so recently-rested players break ties fairly.
+            candidates.sort(key=lambda p: (total_played[p], not sat_last[p], con_played[p] >= 2))
             selected = []
             for p in candidates:
                 if len(selected) < 4 and p not in selected:
