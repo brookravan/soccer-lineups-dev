@@ -44,7 +44,9 @@ APP_CSS = """
     section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
         color: #0f172a !important;
     }
-    section[data-testid="stSidebar"] .stDownloadButton button {
+    section[data-testid="stSidebar"] .stDownloadButton button,
+    section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button,
+    section[data-testid="stSidebar"] [data-testid="stDownloadButton"] a {
         color: #166534 !important;
         background-color: #ffffff !important;
         border: 1px solid #166534 !important;
