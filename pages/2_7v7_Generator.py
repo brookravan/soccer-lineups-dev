@@ -282,9 +282,11 @@ for swap in st.session_state.manual_swaps_7v7:
         l['Bench'].sort()
 
 # Post-Swap Metadata Refresh
-participation, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}
+participation, field_mins, gk_mins, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
 durations = [10, 5, 5, 5, 10, 5, 5, 5]
 pos_fields = ['GK'] + FORMATION_CONFIGS[formation_choice]['slots']
+field_slots = FORMATION_CONFIGS[formation_choice]['slots']
+
 for i, l in enumerate(lineups):
     active = {l[k] for k in pos_fields}
     if i == 0:
@@ -295,8 +297,12 @@ for i, l in enumerate(lineups):
         l['SubsOff'] = sorted([p for p in prev_active if p not in active])
     if i % 2 == 0:
         for p in active: hp_stats[p] += 1
-    for p in attending:
-        if p in active: participation[p] += durations[i]
+
+    participation[l['GK']] += durations[i]
+    gk_mins[l['GK']] += durations[i]
+    for slot in field_slots:
+        participation[l[slot]] += durations[i]
+        field_mins[l[slot]] += durations[i]
 
 # --- PLOTTING FUNCTION ---
 def create_plot(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed):
@@ -368,7 +374,12 @@ st.subheader("Player Minutes Summary")
 st.caption("Total minutes played based on the current rotation and manual swaps.")
 
 # Prepare and sort data for the table
-summary_data = [{"Player": p, "Total Minutes": participation[p]} for p in attending]
-summary_data.sort(key=lambda x: x["Total Minutes"], reverse=True)
+summary_data = [{
+    "Player": p, 
+    "Field Minutes": field_mins[p], 
+    "GK Minutes": gk_mins[p], 
+    "Total": participation[p]
+} for p in attending]
+summary_data.sort(key=lambda x: x["Total"], reverse=True)
 
 st.table(summary_data)
