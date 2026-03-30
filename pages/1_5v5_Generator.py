@@ -39,8 +39,18 @@ st.sidebar.header("Team Configuration")
 # --- CONFIGURATION PERSISTENCE ---
 st.sidebar.header("Configuration Portability")
 uploaded_config = st.sidebar.file_uploader("Upload saved config (.json)", type="json")
+if uploaded_config is not None:
+    config_data = json.load(uploaded_config)
+    for key, value in config_data.items():
+        st.session_state[key] = value
+    # Pre-calculate roster from the loaded/existing roster_raw to handle attendance checkboxes
+    current_roster_raw = st.session_state.get('roster_raw', "")
+    temp_roster = [p.strip() for p in current_roster_raw.split(",") if p.strip()]
+    if "attending" in config_data:
+        for p in temp_roster:
+            st.session_state[f'attend_{p}'] = p in config_data["attending"]
+    st.success("Configuration loaded!")
 
-# Define roster early so it's available for config loading
 roster_raw = st.sidebar.text_area("Roster (comma separated)", st.session_state.get('roster_raw', "Player 1, Player 2, Player 3, Player 4, Player 5, Player 6, Player 7, Player 8"), key='roster_raw')
 roster = [p.strip() for p in roster_raw.split(",") if p.strip()]
 
@@ -51,15 +61,6 @@ if st.sidebar.button("Generate New Random Rotation"):
 team_name = st.sidebar.text_input("Team Name", st.session_state.get('team_name', "Your Team"), key='team_name')
 opponent = st.sidebar.text_input("Opponent", st.session_state.get('opponent', "Opponent"), key='opponent')
 formation_choice = st.sidebar.selectbox("Formation", list(FORMATION_CONFIGS.keys()), key='formation_choice')
-
-if uploaded_config is not None:
-    config_data = json.load(uploaded_config)
-    for key, value in config_data.items():
-        st.session_state[key] = value
-    if "attending" in config_data:
-        for p in roster:
-            st.session_state[f'attend_{p}'] = p in config_data["attending"]
-    st.success("Configuration loaded!")
 
 attending = []
 st.sidebar.subheader("Attending Players")
