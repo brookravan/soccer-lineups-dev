@@ -177,23 +177,21 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
     lineups = []
     con_active_mins = {p: 0 for p in attending}
     con_bench_mins = {p: 0 for p in attending}
-    field_mins_internal = {p: 0 for p in attending}
-    is_gk_anytime = set(quarterly_gks)
+    weighted_mins = {p: 0 for p in attending}
     
     for i, duration in enumerate(durations):
         gk = quarterly_gks[i // 2]
         candidates = [p for p in attending if p != gk]
         
         # Prioritization:
-        # 1. Must stay (consecutive < 10) - Ensures players finish 10m blocks.
-        # 2. Must enter (bench >= 10) - Prioritizes players who have sat long enough.
-        # 3. Field minutes balance: strictly prioritize players with the fewest field minutes.
-        #    GKs get a 6-min virtual penalty to ensure they trail non-GKs by ~5 mins.
-        # 4. Bench time tie-breaker: prioritize those who have been off the longest.
+        # 1. Must stay: Finish 10m blocks.
+        # 2. Must enter: Prioritize players who have sat for 10m or more.
+        # 3. Balanced Minutes: Prioritize fewest weighted minutes (GK time is credited).
+        # 4. Bench tie-breaker: longest off first.
         candidates.sort(key=lambda p: (
             con_active_mins[p] > 0 and con_active_mins[p] < 10,
             con_bench_mins[p] >= 10,
-            - (field_mins_internal[p] + (6 if p in is_gk_anytime else 0)),
+            - weighted_mins[p],
             con_bench_mins[p]
         ), reverse=True)
 
@@ -206,7 +204,11 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
         # Then, fill based on priority and constraints
         for p in candidates:
             if p not in selected and len(selected) < 6:
-                if con_active_mins[p] >= 15: continue # Max 15 mins rule
+                # Max 15 mins rule, relaxed at end of halves (blocks 3 and 7) to balance minutes
+                if con_active_mins[p] >= 15:
+                    is_half_end = i in [3, 7]
+                    is_way_behind = weighted_mins[p] <= (min(weighted_mins.values()) + 5)
+                    if not (is_half_end and is_way_behind): continue
                 
                 split_clash = False
                 for pair in split_pairs:
@@ -236,8 +238,11 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
             if p in active:
                 con_active_mins[p] += duration
                 con_bench_mins[p] = 0
-                if p != gk:
-                    field_mins_internal[p] += duration
+                if p == gk:
+                    # GK stints (10 or 15m) count as 5m less for balancing
+                    weighted_mins[p] += (duration - 2.5)
+                else:
+                    weighted_mins[p] += duration
             else:
                 con_bench_mins[p] += duration
                 con_active_mins[p] = 0
@@ -284,7 +289,7 @@ for swap in st.session_state.manual_swaps_7v7:
         l['Bench'].sort()
 
 # Post-Swap Metadata Refresh
-participation, field_mins, gk_mins, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
+participation, field_mins, gk_mins, weighted_total, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
 durations = [10, 5, 5, 5, 10, 5, 5, 5]
 pos_fields = ['GK'] + FORMATION_CONFIGS[formation_choice]['slots']
 field_slots = FORMATION_CONFIGS[formation_choice]['slots']
@@ -302,9 +307,11 @@ for i, l in enumerate(lineups):
 
     participation[l['GK']] += durations[i]
     gk_mins[l['GK']] += durations[i]
+    weighted_total[l['GK']] += (durations[i] - 2.5)
     for slot in field_slots:
         participation[l[slot]] += durations[i]
         field_mins[l[slot]] += durations[i]
+        weighted_total[l[slot]] += durations[i]
 
 # --- PLOTTING FUNCTION ---
 def create_plot(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed):
@@ -380,8 +387,9 @@ summary_data = [{
     "Player": p, 
     "Field Minutes": field_mins[p], 
     "GK Minutes": gk_mins[p], 
-    "Total": participation[p]
+    "Actual Total": participation[p],
+    "Adjusted Total": weighted_total[p]
 } for p in attending]
-summary_data.sort(key=lambda x: x["Total"], reverse=True)
+summary_data.sort(key=lambda x: x["Adjusted Total"], reverse=True)
 
 st.table(summary_data)
