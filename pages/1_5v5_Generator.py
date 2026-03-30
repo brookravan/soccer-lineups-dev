@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime
 
+import streamlit.components.v1 as components
+
 from shared_logic import APP_CSS, assign_positions, get_plot_bytes
 
 FORMATION_CONFIGS = {
@@ -207,6 +209,158 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
 lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed)
 
 st.header(f"Lineup for {team_name} vs {opponent} (Seed: {current_seed})")
+
+with st.expander("⏱ Game Timer", expanded=False):
+    components.html("""
+    <div style="font-family:-apple-system,sans-serif;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:16px 20px;max-width:480px;margin:0 auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span id="blk-label" style="font-weight:700;font-size:1.05em;color:#166534;"></span>
+            <span id="blk-counter" style="color:#94a3b8;font-size:0.85em;"></span>
+        </div>
+        <div id="time-disp" style="font-size:3.4em;font-weight:700;text-align:center;color:#0f172a;letter-spacing:3px;margin:4px 0 10px;"></div>
+        <div style="background:#e2e8f0;border-radius:4px;height:6px;margin-bottom:14px;overflow:hidden;">
+            <div id="prog-bar" style="background:#166534;height:6px;width:100%;border-radius:4px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+            <button onclick="prevBlock()" style="padding:7px 14px;border:1px solid #166534;color:#166534;background:#fff;border-radius:5px;cursor:pointer;font-size:0.9em;">&#9664; Prev</button>
+            <button id="start-btn" onclick="toggleTimer()" style="padding:7px 20px;background:#166534;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.9em;min-width:95px;">&#9654; Start</button>
+            <button onclick="resetBlock()" style="padding:7px 14px;border:1px solid #166534;color:#166534;background:#fff;border-radius:5px;cursor:pointer;font-size:0.9em;">&#8635; Reset</button>
+            <button onclick="nextBlock()" style="padding:7px 14px;border:1px solid #166534;color:#166534;background:#fff;border-radius:5px;cursor:pointer;font-size:0.9em;">Next &#9654;</button>
+        </div>
+        <div id="status-msg" style="text-align:center;margin-top:10px;font-size:0.82em;min-height:18px;color:#94a3b8;"></div>
+    </div>
+    <script>
+    const STORAGE_KEY = 'soccerTimer_5v5';
+    const BLOCKS = [
+        {label:'Quarter 1 \u2013 Block 1', dur:300},
+        {label:'Quarter 1 \u2013 Block 2', dur:300},
+        {label:'Quarter 2 \u2013 Block 1', dur:300},
+        {label:'Quarter 2 \u2013 Block 2', dur:300},
+        {label:'Quarter 3 \u2013 Block 1', dur:300},
+        {label:'Quarter 3 \u2013 Block 2', dur:300},
+        {label:'Quarter 4 \u2013 Block 1', dur:300},
+        {label:'Quarter 4 \u2013 Block 2', dur:300},
+    ];
+
+    let curBlock = 0;
+    let isRunning = false;
+    let secsLeft = BLOCKS[0].dur; // seconds remaining at last pause
+    let startedAt = null;          // Date.now() when timer was last started
+    let ticker = null;
+
+    function getTimeLeft() {
+        if (isRunning && startedAt !== null) {
+            return Math.max(0, secsLeft - (Date.now() - startedAt) / 1000);
+        }
+        return secsLeft;
+    }
+
+    function fmt(s) {
+        s = Math.ceil(s);
+        return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+    }
+
+    function updateDisplay() {
+        const tl = getTimeLeft();
+        document.getElementById('blk-label').textContent = BLOCKS[curBlock].label;
+        document.getElementById('blk-counter').textContent = 'Block ' + (curBlock+1) + ' of ' + BLOCKS.length;
+        document.getElementById('time-disp').textContent = fmt(tl);
+        document.getElementById('prog-bar').style.width = ((tl / BLOCKS[curBlock].dur) * 100) + '%';
+        document.getElementById('start-btn').textContent = isRunning ? '\u23F8 Pause' : '\u25B6 Start';
+        const msg = document.getElementById('status-msg');
+        if (tl <= 0) {
+            msg.textContent = '\u23F1 Time\u2019s up \u2014 make your subs and hit Next';
+            msg.style.color = '#dc2626';
+        } else {
+            msg.textContent = '';
+            msg.style.color = '#94a3b8';
+        }
+    }
+
+    function playBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            [0, 0.3, 0.6].forEach(t => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.value = 880;
+                gain.gain.setValueAtTime(0.5, ctx.currentTime + t);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+                osc.start(ctx.currentTime + t);
+                osc.stop(ctx.currentTime + t + 0.25);
+            });
+        } catch(e) {}
+    }
+
+    function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({curBlock, isRunning, secsLeft, startedAt}));
+    }
+
+    function loadState() {
+        try {
+            const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
+            if (!s) return;
+            curBlock  = s.curBlock  ?? 0;
+            isRunning = s.isRunning ?? false;
+            secsLeft  = s.secsLeft  ?? BLOCKS[0].dur;
+            startedAt = s.startedAt ?? null;
+            // If it was running, check whether time has already expired
+            if (isRunning && startedAt !== null && getTimeLeft() <= 0) {
+                isRunning = false; secsLeft = 0; startedAt = null;
+            }
+        } catch(e) {}
+    }
+
+    function tick() {
+        const tl = getTimeLeft();
+        updateDisplay();
+        if (tl <= 0) {
+            clearInterval(ticker); ticker = null;
+            isRunning = false; secsLeft = 0; startedAt = null;
+            saveState(); playBeep(); updateDisplay();
+        }
+    }
+
+    function toggleTimer() {
+        if (isRunning) {
+            secsLeft = getTimeLeft(); startedAt = null; isRunning = false;
+            clearInterval(ticker); ticker = null;
+        } else {
+            if (secsLeft <= 0) secsLeft = BLOCKS[curBlock].dur;
+            startedAt = Date.now(); isRunning = true;
+            ticker = setInterval(tick, 250);
+        }
+        saveState(); updateDisplay();
+    }
+
+    function resetBlock() {
+        clearInterval(ticker); ticker = null;
+        isRunning = false; secsLeft = BLOCKS[curBlock].dur; startedAt = null;
+        saveState(); updateDisplay();
+    }
+
+    function nextBlock() {
+        if (curBlock < BLOCKS.length - 1) {
+            clearInterval(ticker); ticker = null;
+            isRunning = false; curBlock++; secsLeft = BLOCKS[curBlock].dur; startedAt = null;
+            saveState(); updateDisplay();
+        }
+    }
+
+    function prevBlock() {
+        if (curBlock > 0) {
+            clearInterval(ticker); ticker = null;
+            isRunning = false; curBlock--; secsLeft = BLOCKS[curBlock].dur; startedAt = null;
+            saveState(); updateDisplay();
+        }
+    }
+
+    loadState();
+    if (isRunning && startedAt !== null) { ticker = setInterval(tick, 250); }
+    updateDisplay();
+    </script>
+    """, height=230)
 
 with st.expander("Manual Swaps"):
     col1, col2, col3, col4 = st.columns(4)
