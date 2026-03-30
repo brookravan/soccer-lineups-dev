@@ -9,6 +9,8 @@ from matplotlib import patheffects
 import random
 import io
 import json
+import os
+from datetime import datetime
 
 FORMATION_CONFIGS = {
     "1-2-1": {
@@ -345,3 +347,11 @@ summary_data = [{"Player": p, "Periods Played": participation[p]} for p in atten
 summary_data.sort(key=lambda x: x["Periods Played"], reverse=True)
 
 st.table(summary_data)
+
+# Subtle footer to track version/sync time
+last_sync = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime("%Y-%m-%d %H:%M:%S")
+st.markdown(
+    f"<div style='opacity: 0.3; text-align: center; font-size: 0.8em; margin-top: 50px;'>"
+    f"Last synchronized: {last_sync}</div>",
+    unsafe_allow_html=True
+)

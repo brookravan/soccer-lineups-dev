@@ -9,6 +9,8 @@ from matplotlib import patheffects
 import random
 import io
 import json
+import os
+from datetime import datetime
 
 FORMATION_CONFIGS = {
     "3-2-1": {
@@ -177,37 +179,37 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
     lineups = []
     con_active_mins = {p: 0 for p in attending}
     con_bench_mins = {p: 0 for p in attending}
-    weighted_mins = {p: 0 for p in attending}
+    total_mins = {p: 0 for p in attending}
     
     for i, duration in enumerate(durations):
         gk = quarterly_gks[i // 2]
+        is_half_end = i in [3, 7] # Blocks 3 and 7 are the final 5 mins of halves
         candidates = [p for p in attending if p != gk]
         
         # Prioritization:
-        # 1. Must stay: Finish 10m blocks.
-        # 2. Must enter: Prioritize players who have sat for 10m or more.
-        # 3. Balanced Minutes: Prioritize fewest weighted minutes (GK time is credited).
+        # 1. Must stay: Finish 10m blocks (relaxed at end-of-half to allow minute balancing).
+        # 2. Balanced Minutes: Prioritize players with fewest total minutes to hit the 5m variance goal.
+        # 3. Must enter: Prioritize players who have sat for 10m or more.
         # 4. Bench tie-breaker: longest off first.
         candidates.sort(key=lambda p: (
-            con_active_mins[p] > 0 and con_active_mins[p] < 10,
+            (con_active_mins[p] > 0 and con_active_mins[p] < 10) and not is_half_end,
+            - total_mins[p],
             con_bench_mins[p] >= 10,
-            - weighted_mins[p],
             con_bench_mins[p]
         ), reverse=True)
 
         selected = []
         # First, force those who must stay
         for p in candidates:
-            if 0 < con_active_mins[p] < 10 and len(selected) < 6:
+            if (0 < con_active_mins[p] < 10) and not is_half_end and len(selected) < 6:
                 selected.append(p)
 
         # Then, fill based on priority and constraints
         for p in candidates:
             if p not in selected and len(selected) < 6:
-                # Max 15 mins rule, relaxed at end of halves (blocks 3 and 7) to balance minutes
+                # Max 15 mins rule, relaxed at end of halves to balance minutes
                 if con_active_mins[p] >= 15:
-                    is_half_end = i in [3, 7]
-                    is_way_behind = weighted_mins[p] <= (min(weighted_mins.values()) + 5)
+                    is_way_behind = total_mins[p] <= (min(total_mins.values()) + 5)
                     if not (is_half_end and is_way_behind): continue
                 
                 split_clash = False
@@ -238,11 +240,7 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
             if p in active:
                 con_active_mins[p] += duration
                 con_bench_mins[p] = 0
-                if p == gk:
-                    # GK stints (10 or 15m) count as 5m less for balancing
-                    weighted_mins[p] += (duration - 2.5)
-                else:
-                    weighted_mins[p] += duration
+                total_mins[p] += duration
             else:
                 con_bench_mins[p] += duration
                 con_active_mins[p] = 0
@@ -289,7 +287,7 @@ for swap in st.session_state.manual_swaps_7v7:
         l['Bench'].sort()
 
 # Post-Swap Metadata Refresh
-participation, field_mins, gk_mins, weighted_total, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
+participation, field_mins, gk_mins, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
 durations = [10, 5, 5, 5, 10, 5, 5, 5]
 pos_fields = ['GK'] + FORMATION_CONFIGS[formation_choice]['slots']
 field_slots = FORMATION_CONFIGS[formation_choice]['slots']
@@ -307,11 +305,9 @@ for i, l in enumerate(lineups):
 
     participation[l['GK']] += durations[i]
     gk_mins[l['GK']] += durations[i]
-    weighted_total[l['GK']] += (durations[i] - 2.5)
     for slot in field_slots:
         participation[l[slot]] += durations[i]
         field_mins[l[slot]] += durations[i]
-        weighted_total[l[slot]] += durations[i]
 
 # --- PLOTTING FUNCTION ---
 def create_plot(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed):
@@ -387,9 +383,16 @@ summary_data = [{
     "Player": p, 
     "Field Minutes": field_mins[p], 
     "GK Minutes": gk_mins[p], 
-    "Actual Total": participation[p],
-    "Adjusted Total": weighted_total[p]
+    "Total": participation[p]
 } for p in attending]
-summary_data.sort(key=lambda x: x["Adjusted Total"], reverse=True)
+summary_data.sort(key=lambda x: x["Total"], reverse=True)
 
 st.table(summary_data)
+
+# Subtle footer to track version/sync time
+last_sync = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime("%Y-%m-%d %H:%M:%S")
+st.markdown(
+    f"<div style='opacity: 0.3; text-align: center; font-size: 0.8em; margin-top: 50px;'>"
+    f"Last synchronized: {last_sync}</div>",
+    unsafe_allow_html=True
+)
