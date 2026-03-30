@@ -31,14 +31,23 @@ APP_CSS = """
     section[data-testid="stSidebar"] input,
     section[data-testid="stSidebar"] textarea,
     section[data-testid="stSidebar"] [data-baseweb="input"],
-    section[data-testid="stSidebar"] [data-baseweb="base-input"] {
+    section[data-testid="stSidebar"] [data-baseweb="base-input"],
+    section[data-testid="stSidebar"] [data-baseweb="select"],
+    section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
         background-color: rgba(255, 255, 255, 0.9) !important;
     }
     section[data-testid="stSidebar"] input,
     section[data-testid="stSidebar"] textarea,
     section[data-testid="stSidebar"] [data-baseweb="input"] *,
-    section[data-testid="stSidebar"] [data-baseweb="base-input"] * {
+    section[data-testid="stSidebar"] [data-baseweb="base-input"] *,
+    section[data-testid="stSidebar"] [data-baseweb="select"] *,
+    section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
         color: #0f172a !important;
+    }
+    section[data-testid="stSidebar"] .stDownloadButton button {
+        color: #166534 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #166534 !important;
     }
     div.stButton > button:first-child {
         background-color: #166534;
