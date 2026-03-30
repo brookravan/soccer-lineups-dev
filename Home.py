@@ -9,7 +9,7 @@ st.set_page_config(
 st.markdown("""
     <style>
     .stApp {
-        background-color: #edf2ed;
+        background-color: #dce8dc;
     }
     section[data-testid="stSidebar"] {
         background-color: #1e4d35;

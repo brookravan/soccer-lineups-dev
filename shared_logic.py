@@ -20,7 +20,7 @@ import io
 APP_CSS = """
     <style>
     .stApp {
-        background-color: #edf2ed;
+        background-color: #dce8dc;
     }
     section[data-testid="stSidebar"] {
         background-color: #1e4d35;
