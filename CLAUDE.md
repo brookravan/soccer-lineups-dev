@@ -4,10 +4,21 @@
 This is a mostly complete Python project that generates youth soccer lineups for 5v5 and 7v7 formats, surfaced as a Streamlit app. The core logic is stable. Work at this stage is refinement, bug fixes, and UI improvements — not rebuilds.
 
 ## Project structure
-- `pages/1_5v5_Generator.py` — all 5v5 logic, player selection, constraint enforcement, and Streamlit UI in one file
-- `pages/2_7v7_Generator.py` — all 7v7 logic, player selection, constraint enforcement, and Streamlit UI in one file
-- These files are self-contained — do not split or restructure them without explicit instruction
-- The 5v5 and 7v7 files follow the same general approach but are not identical — treat each file's implementation on its own terms
+- `Home.py` — Streamlit landing page, pure UI only, no logic. Do not add logic here.
+- `shared_logic.py` — shared lineup generation logic, constraint enforcement, and utilities used by both generator pages. Lives in project root for clean importing.
+- `pages/1_5v5_Generator.py` — 5v5-specific logic, player selection, and Streamlit UI. Imports shared logic from `shared_logic.py`.
+- `pages/2_7v7_Generator.py` — 7v7-specific logic, player selection, and Streamlit UI. Imports shared logic from `shared_logic.py`.
+
+**Structure rules**
+- Logic that applies to both formats belongs in `shared_logic.py`
+- Logic that is format-specific stays in the relevant generator file
+- When adding new functionality, explicitly decide which category it belongs to before writing any code — ask if unsure
+- Do not put utility logic in `Home.py` or in the `pages/` folder outside the generator files
+- When a bug is found in shared logic, fix it once in `shared_logic.py` — do not patch it separately in each generator file
+
+**Refactor sequencing**
+- When refactoring, always extract shared logic first and verify both generator files work correctly before fixing bugs
+- Fix bugs after the refactor is confirmed working — never refactor and fix bugs in the same pass
 
 ## Game structure
 

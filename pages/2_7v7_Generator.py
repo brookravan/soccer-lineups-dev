@@ -1,16 +1,10 @@
-import matplotlib
-import matplotlib.pyplot as plt
-# Set non-interactive backend BEFORE importing pyplot or using it
-matplotlib.use('Agg')
-
 import streamlit as st
-from mplsoccer import Pitch
-from matplotlib import patheffects
 import random
-import io
 import json
 import os
 from datetime import datetime
+
+from shared_logic import APP_CSS, assign_positions, get_plot_bytes
 
 FORMATION_CONFIGS = {
     "3-2-1": {
@@ -42,30 +36,7 @@ FORMATION_CONFIGS = {
 
 st.set_page_config(page_title="Soccer Lineup Generator", layout="wide")
 
-st.markdown("""
-    <style>
-    .stApp {
-        background-color: #f8fafc;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #f1f5f9;
-    }
-    div.stButton > button:first-child {
-        background-color: #166534;
-        color: white;
-        border: none;
-    }
-    thead tr th {
-        background-color: #166534 !important;
-        color: white !important;
-    }
-    .stDownloadButton > button {
-        background-color: #ffffff;
-        border: 1px solid #166534 !important;
-        color: #166534 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.markdown(APP_CSS, unsafe_allow_html=True)
 
 # --- APP STATE INITIALIZATION ---
 if 'seed' not in st.session_state:
@@ -177,27 +148,6 @@ user_seed = st.sidebar.text_input("Seed (leave blank for random)", "")
 current_seed = int(user_seed) if user_seed.isdigit() else st.session_state.seed
 random.seed(current_seed)
 
-# --- LOGIC (REUSED FROM YOUR SCRIPT) ---
-def assign_positions(players, ranks, formation_key):
-    f_cfg = FORMATION_CONFIGS[formation_key]
-    slots, slot_types = f_cfg['slots'], f_cfg['slot_types']
-    assignment = {s: None for s in slots}
-    rem_players = list(players)
-    random.shuffle(rem_players)
-    for level in ['1', '2', '3']:
-        for slot in slots:
-            if assignment[slot] is None:
-                idx = slot_types[slot]
-                for p in rem_players:
-                    if p in ranks and ranks[p][idx] == level:
-                        assignment[slot] = p
-                        rem_players.remove(p)
-                        break
-    for slot in slots:
-        if assignment[slot] is None and rem_players:
-            assignment[slot] = rem_players.pop(0)
-    return assignment
-
 @st.cache_data
 def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed):
     random.seed(seed)
@@ -261,7 +211,7 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
             for p in candidates:
                 if p not in selected and len(selected) < 6: selected.append(p)
 
-        assigned = assign_positions(selected, player_ranks, formation_key)
+        assigned = assign_positions(selected, player_ranks, formation_key, FORMATION_CONFIGS)
         assigned['GK'] = gk
         active = set(selected) | {gk}
         assigned['Bench'] = sorted([p for p in attending if p not in active])
@@ -340,53 +290,12 @@ for i, l in enumerate(lineups):
         participation[l[slot]] += durations[i]
         field_mins[l[slot]] += durations[i]
 
-# --- PLOTTING FUNCTION ---
-def create_plot(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed):
-    pitch = Pitch(pitch_color='grass', line_color='white', stripe=True)
-    if layout_type == 'SingleColumn':
-        nr, nc, fh, gh, eh, sp = 8, 1, 28, 0.88, 0.07, 0.5
-    else:
-        nr, nc, fh, gh, eh, sp = 4, 2, 20, 0.82, 0.08, 0.45
-
-    fig, axs = pitch.grid(nrows=nr, ncols=nc, figheight=fh, grid_height=gh, title_height=0, endnote_height=eh, space=sp)
-    fig.suptitle(f"{team_name} vs {opponent} | Seed: {current_seed}", fontsize=22, fontweight='bold', y=0.995)
-    path_eff = [patheffects.withStroke(linewidth=3, foreground="black")]
-    f_cfg = FORMATION_CONFIGS[formation_key]
-
-    for i, ax in enumerate(axs['pitch'].flat):
-        half = (i // 4) + 1
-        block_labels = ["0-10m", "10-15m", "15-20m", "20-25m"]
-        label = f"Half {half}: {block_labels[i % 4]}"
-        l = lineups[i]
-        pitch.draw(ax=ax)
-        ax.set_title(label, fontsize=13, fontweight='bold', pad=5)
-        for pos in ['GK'] + f_cfg['slots']:
-            px, py = f_cfg['coords'][pos]
-            color = '#f1c40f' if pos == 'GK' else '#3498db'
-            pitch.scatter(px, py, s=400, c=color, edgecolors='white', ax=ax, zorder=3)
-            pitch.annotate(l[pos], (px, py + 6), fontsize=9.5, ax=ax, color='white', path_effects=path_eff, fontweight='bold', ha='center')
-        
-        subs_text = f"ON: {', '.join(l['SubsOn'])}  |  OFF: {', '.join(l['SubsOff'])}\nBENCH: {', '.join(l['Bench'])}"
-        ax.text(0.5, -0.05, subs_text, fontsize=9, ha='center', va='top', fontweight='bold', transform=ax.transAxes)
-
-    # Create summary table in endnote
-    ax_table = axs['endnote']
-    ax_table.axis('off')
-    return fig
-
-@st.cache_data
-def get_plot_bytes(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed):
-    fig = create_plot(layout_type, lineups, participation, hp_stats, team_name, opponent, formation_key, seed)
-    buf = io.BytesIO()
-    fig.savefig(buf, format="jpg", dpi=100, bbox_inches='tight')
-    plt.close(fig)
-    return buf.getvalue()
-
 # --- DISPLAY & DOWNLOAD ---
+period_labels = [f"Half {(i // 4) + 1}: {['0-10m', '10-15m', '15-20m', '20-25m'][i % 4]}" for i in range(8)]
 tab1, tab2 = st.tabs(["Printable View", "Single Column View"])
 
 with tab1:
-    img_bytes1 = get_plot_bytes('Printable', lineups, participation, hp_stats, team_name, opponent, formation_choice, current_seed)
+    img_bytes1 = get_plot_bytes('Printable', lineups, participation, hp_stats, team_name, opponent, formation_choice, FORMATION_CONFIGS, current_seed, period_labels)
     st.image(img_bytes1)
     st.download_button(
         label="Download Printable JPG",
@@ -396,7 +305,7 @@ with tab1:
     )
 
 with tab2:
-    img_bytes2 = get_plot_bytes('SingleColumn', lineups, participation, hp_stats, team_name, opponent, formation_choice, current_seed)
+    img_bytes2 = get_plot_bytes('SingleColumn', lineups, participation, hp_stats, team_name, opponent, formation_choice, FORMATION_CONFIGS, current_seed, period_labels)
     st.image(img_bytes2)
     st.download_button(
         label="Download Single Column JPG",
