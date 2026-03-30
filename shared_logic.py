@@ -13,62 +13,6 @@ from matplotlib import patheffects
 import random
 import io
 
-
-# --- CSS STYLING ---
-# Source: both files (identical)
-# Apply with: st.markdown(APP_CSS, unsafe_allow_html=True)
-APP_CSS = """
-    <style>
-    .stApp {
-        background-color: #dce8dc;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #1e4d35;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #f0fdf4;
-    }
-    section[data-testid="stSidebar"] input,
-    section[data-testid="stSidebar"] textarea,
-    section[data-testid="stSidebar"] [data-baseweb="input"],
-    section[data-testid="stSidebar"] [data-baseweb="base-input"],
-    section[data-testid="stSidebar"] [data-baseweb="select"],
-    section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-        background-color: rgba(255, 255, 255, 0.9) !important;
-    }
-    section[data-testid="stSidebar"] input,
-    section[data-testid="stSidebar"] textarea,
-    section[data-testid="stSidebar"] [data-baseweb="input"] *,
-    section[data-testid="stSidebar"] [data-baseweb="base-input"] *,
-    section[data-testid="stSidebar"] [data-baseweb="select"] *,
-    section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
-        color: #0f172a !important;
-    }
-    section[data-testid="stSidebar"] .stDownloadButton button,
-    section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button,
-    section[data-testid="stSidebar"] [data-testid="stDownloadButton"] a {
-        color: white !important;
-        background-color: #166534 !important;
-        border: none !important;
-    }
-    div.stButton > button:first-child {
-        background-color: #166534;
-        color: white;
-        border: none;
-    }
-    thead tr th {
-        background-color: #166534 !important;
-        color: white !important;
-    }
-    .stDownloadButton > button {
-        background-color: #ffffff;
-        border: 1px solid #166534 !important;
-        color: #166534 !important;
-    }
-    </style>
-"""
-
-
 # --- POSITION ASSIGNMENT ---
 # Source: both files (identical logic)
 # Note: original versions read FORMATION_CONFIGS from module scope.

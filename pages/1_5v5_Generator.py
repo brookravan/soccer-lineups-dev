@@ -6,7 +6,7 @@ from datetime import datetime
 
 import streamlit.components.v1 as components
 
-from shared_logic import APP_CSS, assign_positions, get_plot_bytes
+from shared_logic import assign_positions, get_plot_bytes
 
 FORMATION_CONFIGS = {
     "1-2-1": {
@@ -22,8 +22,6 @@ FORMATION_CONFIGS = {
 }
 
 st.set_page_config(page_title="Soccer Lineup Generator", layout="wide")
-
-st.markdown(APP_CSS, unsafe_allow_html=True)
 
 # --- APP STATE INITIALIZATION ---
 if 'seed' not in st.session_state:

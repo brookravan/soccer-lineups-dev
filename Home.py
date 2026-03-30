@@ -6,29 +6,6 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-    <style>
-    .stApp {
-        background-color: #dce8dc;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #1e4d35;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #f0fdf4;
-    }
-    .main .block-container {
-        padding-top: 2rem;
-    }
-    div.stButton > button:first-child {
-        background-color: #166534;
-        color: white;
-    }
-    h1 {
-        color: #166534;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 st.title("Soccer Lineup Generator")
 st.write("""
