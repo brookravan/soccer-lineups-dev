@@ -30,24 +30,32 @@ def assign_positions(players, ranks, formation_key, formation_configs, positions
     assignment = {s: None for s in slots}
     rem_players = list(players)
     random.shuffle(rem_players)
-    for level in ['1', '2', '3']:
-        for slot in slots:
-            if assignment[slot] is None:
-                idx = slot_types[slot]
-                # Prefer players who haven't played this slot type yet (position variety)
-                if positions_played:
+    # Pass 1 (variety): assign players to slot types they haven't played yet this game.
+    # Crosses preference levels — a rank-'2' player who needs this slot type beats
+    # a rank-'1' player who has already played it.
+    if positions_played:
+        for level in ['1', '2', '3']:
+            for slot in slots:
+                if assignment[slot] is None:
+                    idx = slot_types[slot]
                     for p in rem_players:
                         if p in ranks and ranks[p][idx] == level and idx not in positions_played.get(p, set()):
                             assignment[slot] = p
                             rem_players.remove(p)
                             break
-                # Fall back to any player at this preference level
-                if assignment[slot] is None:
-                    for p in rem_players:
-                        if p in ranks and ranks[p][idx] == level:
-                            assignment[slot] = p
-                            rem_players.remove(p)
-                            break
+
+    # Pass 2 (preference): fill any remaining slots using preference rank only.
+    for level in ['1', '2', '3']:
+        for slot in slots:
+            if assignment[slot] is None:
+                idx = slot_types[slot]
+                for p in rem_players:
+                    if p in ranks and ranks[p][idx] == level:
+                        assignment[slot] = p
+                        rem_players.remove(p)
+                        break
+
+    # Catchall: assign any leftover players to unfilled slots.
     for slot in slots:
         if assignment[slot] is None and rem_players:
             assignment[slot] = rem_players.pop(0)
