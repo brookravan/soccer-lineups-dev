@@ -59,6 +59,11 @@ team_name = st.sidebar.text_input("Team Name", st.session_state.get('team_name',
 opponent = st.sidebar.text_input("Opponent", st.session_state.get('opponent', "Opponent"), key='opponent')
 formation_choice = st.sidebar.selectbox("Formation", list(FORMATION_CONFIGS.keys()), key='formation_choice')
 
+st.sidebar.subheader("Game Structure")
+quarter_duration = st.sidebar.number_input("Quarter duration (min)", min_value=1, max_value=30, step=1, value=12, key='quarter_duration')
+subs_per_quarter = st.sidebar.number_input("Subs per quarter", min_value=1, max_value=4, step=1, value=2, key='subs_per_quarter')
+block_secs = int((quarter_duration / subs_per_quarter) * 60)
+
 attending = []
 st.sidebar.subheader("Attending Players")
 for p in roster:
@@ -128,10 +133,12 @@ for i in range(1, 3):
     config_to_save[f"syn{i}b"] = st.session_state[f"syn{i}b"]
 config_to_save["seed"] = current_seed
 config_to_save["user_seed"] = str(current_seed)
+config_to_save["quarter_duration"] = quarter_duration
+config_to_save["subs_per_quarter"] = subs_per_quarter
 # manual_swaps_5v5 is added at download time (main body) so it captures the current run's swaps
 
 @st.cache_data
-def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed):
+def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, subs_per_quarter):
     random.seed(seed)
     lineups = []
     con_played = {p: 0 for p in attending}
@@ -148,7 +155,7 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
 
     for q in range(4):
         gk = quarterly_gks[q]
-        for b in range(2):
+        for b in range(subs_per_quarter):
             is_hp = (b == 0)
             candidates = [p for p in attending if p != gk]
             # Primary sort: fewest participation credits first (mirrors the display table).
@@ -211,11 +218,16 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
     return lineups
 
 # --- EXECUTION & SWAPS ---
-lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed)
+lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed, subs_per_quarter)
 
 st.header(f"Lineup for {team_name} vs {opponent} (Seed: {current_seed})")
 
 with st.expander("⏱ Game Timer", expanded=False):
+    # Build BLOCKS array dynamically from game structure settings
+    _blocks_entries = ",\n        ".join(
+        "{label:'Quarter " + str(q+1) + " \u2013 Block " + str(b+1) + "', dur:" + str(block_secs) + "}"
+        for q in range(4) for b in range(subs_per_quarter)
+    )
     components.html("""
     <div style="font-family:-apple-system,sans-serif;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:16px 20px;max-width:480px;margin:0 auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -237,14 +249,7 @@ with st.expander("⏱ Game Timer", expanded=False):
     <script>
     const STORAGE_KEY = 'soccerTimer_5v5';
     const BLOCKS = [
-        {label:'Quarter 1 \u2013 Block 1', dur:300},
-        {label:'Quarter 1 \u2013 Block 2', dur:300},
-        {label:'Quarter 2 \u2013 Block 1', dur:300},
-        {label:'Quarter 2 \u2013 Block 2', dur:300},
-        {label:'Quarter 3 \u2013 Block 1', dur:300},
-        {label:'Quarter 3 \u2013 Block 2', dur:300},
-        {label:'Quarter 4 \u2013 Block 1', dur:300},
-        {label:'Quarter 4 \u2013 Block 2', dur:300},
+        """ + _blocks_entries + """
     ];
 
     let curBlock = 0;
@@ -422,7 +427,7 @@ for i, l in enumerate(lineups):
         participation[l[slot]] += 1
 
 # --- DISPLAY & DOWNLOAD ---
-period_labels = [f"Quarter {(i // 2) + 1} - Block {(i % 2) + 1}" for i in range(8)]
+period_labels = [f"Quarter {q+1} - Block {b+1}" for q in range(4) for b in range(subs_per_quarter)]
 tab1, tab2 = st.tabs(["Printable View", "Single Column View"])
 
 with tab1:

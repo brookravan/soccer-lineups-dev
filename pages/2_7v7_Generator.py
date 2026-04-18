@@ -74,6 +74,29 @@ team_name = st.sidebar.text_input("Team Name", st.session_state.get('team_name',
 opponent = st.sidebar.text_input("Opponent", st.session_state.get('opponent', "Opponent"), key='opponent')
 formation_choice = st.sidebar.selectbox("Formation", list(FORMATION_CONFIGS.keys()), key='formation_choice')
 
+st.sidebar.subheader("Game Structure")
+half_duration = st.sidebar.number_input("Half duration (min)", min_value=1, max_value=60, step=1, value=25, key='half_duration')
+sub_marks_raw = st.sidebar.text_input("Sub minute marks (comma-separated)", value="10, 15, 20", key='sub_marks_raw')
+
+# Parse and validate sub minute marks; fall back to defaults on invalid input
+try:
+    sub_marks = sorted([int(x.strip()) for x in sub_marks_raw.split(',') if x.strip()])
+    if not sub_marks or any(m <= 0 or m >= half_duration for m in sub_marks):
+        raise ValueError
+    durations_half = ([sub_marks[0]]
+                      + [sub_marks[i+1] - sub_marks[i] for i in range(len(sub_marks)-1)]
+                      + [half_duration - sub_marks[-1]])
+    if any(d <= 0 for d in durations_half):
+        raise ValueError
+except (ValueError, AttributeError):
+    st.sidebar.warning("Invalid sub marks — using defaults (10, 15, 20)")
+    sub_marks = [10, 15, 20]
+    durations_half = [10, 5, 5, 5]
+
+durations = durations_half * 2
+blocks_per_half = len(durations_half)
+gk_split = blocks_per_half // 2  # GK1 plays first gk_split blocks of each half, GK2 plays the rest
+
 attending = []
 st.sidebar.subheader("Attending Players")
 for p in roster:
@@ -83,7 +106,9 @@ for p in roster:
 quarterly_gks = []
 if len(attending) > 0:
     st.sidebar.subheader("Goalkeepers")
-    gk_labels = ["H1 Start-10m", "H1 10m-25m", "H2 Start-10m", "H2 10m-25m"]
+    gk1_end = sum(durations_half[:gk_split])
+    gk_labels = [f"H1 0-{gk1_end}m", f"H1 {gk1_end}-{half_duration}m",
+                 f"H2 0-{gk1_end}m", f"H2 {gk1_end}-{half_duration}m"]
     for q in range(1, 5):
         saved_gk = st.session_state.get(f"gk_q{q}")
         gk_idx = attending.index(saved_gk) if saved_gk in attending else (q-1)%len(attending)
@@ -145,24 +170,27 @@ for i in range(1, 3):
     config_to_save[f"syn{i}b"] = st.session_state[f"syn{i}b"]
 config_to_save["seed"] = current_seed
 config_to_save["user_seed"] = str(current_seed)
+config_to_save["half_duration"] = half_duration
+config_to_save["sub_marks_raw"] = sub_marks_raw
 # manual_swaps_7v7 is added at download time (main body) so it captures the current run's swaps
 
 @st.cache_data
-def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed):
+def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, durations, gk_split):
     random.seed(seed)
-    # Game Structure: 8 Blocks (Minutes: 10, 5, 5, 5 per half)
-    durations = [10, 5, 5, 5, 10, 5, 5, 5]
     lineups = []
     con_active_mins = {p: 0 for p in attending}
     con_bench_mins = {p: 0 for p in attending}
     total_mins = {p: 0 for p in attending}
-    
+
     # Tracks which slot types (0=DEF, 1=MID, 2=FWD) each player has been assigned so far
     positions_played = {p: set() for p in attending}
 
+    blocks_per_half = len(durations) // 2
     for i, duration in enumerate(durations):
-        gk = quarterly_gks[i // 2]
-        is_half_end = i in [3, 7] # Blocks 3 and 7 are the final 5 mins of halves
+        block_in_half = i % blocks_per_half
+        half_idx = i // blocks_per_half
+        gk = quarterly_gks[half_idx * 2 + (1 if block_in_half >= gk_split else 0)]
+        is_half_end = (block_in_half == blocks_per_half - 1)
         candidates = [p for p in attending if p != gk]
         
         # Prioritization:
@@ -234,11 +262,21 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
     return lineups
 
 # --- EXECUTION & SWAPS ---
-lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed)
+lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed, tuple(durations), gk_split)
 
 st.header(f"Lineup for {team_name} vs {opponent} (Seed: {current_seed})")
 
 with st.expander("⏱ Game Timer", expanded=False):
+    # Build BLOCKS array dynamically from game structure settings
+    _block_parts = []
+    for _half in range(2):
+        _t = 0
+        for _d in durations_half:
+            _block_parts.append(
+                "{label:'Half " + str(_half+1) + ": " + str(_t) + "\u2013" + str(_t+_d) + "m', dur:" + str(_d*60) + "}"
+            )
+            _t += _d
+    _blocks_entries = ",\n        ".join(_block_parts)
     components.html("""
     <div style="font-family:-apple-system,sans-serif;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:16px 20px;max-width:480px;margin:0 auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -260,14 +298,7 @@ with st.expander("⏱ Game Timer", expanded=False):
     <script>
     const STORAGE_KEY = 'soccerTimer_7v7';
     const BLOCKS = [
-        {label:'Half 1: 0\u201310m',   dur:600},
-        {label:'Half 1: 10\u201315m',  dur:300},
-        {label:'Half 1: 15\u201320m',  dur:300},
-        {label:'Half 1: 20\u201325m',  dur:300},
-        {label:'Half 2: 0\u201310m',   dur:600},
-        {label:'Half 2: 10\u201315m',  dur:300},
-        {label:'Half 2: 15\u201320m',  dur:300},
-        {label:'Half 2: 20\u201325m',  dur:300},
+        """ + _blocks_entries + """
     ];
 
     let curBlock = 0;
@@ -425,7 +456,6 @@ for swap in st.session_state.manual_swaps_7v7:
 
 # Post-Swap Metadata Refresh
 participation, field_mins, gk_mins, hp_stats = {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}, {p: 0 for p in attending}
-durations = [10, 5, 5, 5, 10, 5, 5, 5]
 pos_fields = ['GK'] + FORMATION_CONFIGS[formation_choice]['slots']
 field_slots = FORMATION_CONFIGS[formation_choice]['slots']
 
@@ -447,7 +477,12 @@ for i, l in enumerate(lineups):
         field_mins[l[slot]] += durations[i]
 
 # --- DISPLAY & DOWNLOAD ---
-period_labels = [f"Half {(i // 4) + 1}: {['0-10m', '10-15m', '15-20m', '20-25m'][i % 4]}" for i in range(8)]
+period_labels = []
+for _half in range(2):
+    _t = 0
+    for _d in durations_half:
+        period_labels.append(f"Half {_half+1}: {_t}-{_t+_d}m")
+        _t += _d
 tab1, tab2 = st.tabs(["Printable View", "Single Column View"])
 
 with tab1:

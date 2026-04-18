@@ -72,10 +72,13 @@ def create_plot(layout_type, lineups, participation, hp_stats, team_name, oppone
                 formation_key, formation_configs, seed, period_labels):
     """Render a grid of pitch diagrams, one per period."""
     pitch = Pitch(pitch_color='grass', line_color='white', stripe=True)
+    total_periods = len(lineups)
     if layout_type == 'SingleColumn':
-        nr, nc, fh, gh, eh, sp = 8, 1, 28, 0.88, 0.07, 0.5
+        nr, nc = total_periods, 1
+        fh, gh, eh, sp = total_periods * 3.5, 0.88, 0.07, 0.5
     else:
-        nr, nc, fh, gh, eh, sp = 4, 2, 20, 0.82, 0.08, 0.45
+        nr, nc = total_periods // 2, 2
+        fh, gh, eh, sp = (total_periods // 2) * 5, 0.82, 0.08, 0.45
 
     fig, axs = pitch.grid(nrows=nr, ncols=nc, figheight=fh, grid_height=gh,
                           title_height=0, endnote_height=eh, space=sp)
