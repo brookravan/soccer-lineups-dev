@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $f ===\")",
+      "Read(//c/Users/brook/OneDrive/Documents/DND/Goranim/**)",
+      "Bash(done)",
+      "Bash(python3:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
