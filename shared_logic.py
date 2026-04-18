@@ -39,7 +39,7 @@ def assign_positions(players, ranks, formation_key, formation_configs, positions
                 if assignment[slot] is None:
                     idx = slot_types[slot]
                     for p in rem_players:
-                        if p in ranks and ranks[p][idx] == level and idx not in positions_played.get(p, set()):
+                        if p in ranks and ranks[p][idx] == level and idx not in positions_played.get(p, set()) and len(positions_played.get(p, set())) < 2:
                             assignment[slot] = p
                             rem_players.remove(p)
                             break
