@@ -337,9 +337,17 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
     y = {(p, t, s): pulp.LpVariable(f"y_{p_idx[p]}_{t}_{s}", cat='Binary')
          for p in attending for t in range(total_periods) for s in slots}
 
-    # v[p,k] = 1 if player p plays at least one slot of position type k (variety bonus)
+    # v[p,k] = 1 if player p plays at least one slot of position type k
+    # Used only to build the meets_variety constraint below — not weighted directly.
     v = {(p, k): pulp.LpVariable(f"v_{p_idx[p]}_{k}", cat='Binary')
          for p in attending for k in unique_types}
+
+    # meets_variety[p] = 1 if player p plays at least 2 distinct position types.
+    # A flat bonus rewards reaching the 2-type variety target.  No additional reward
+    # is given for a 3rd type, so the solver never sacrifices preference just to add
+    # a type the player has already surpassed their variety requirement with.
+    meets_variety = {p: pulp.LpVariable(f"mv_{p_idx[p]}", cat='Binary')
+                     for p in attending}
 
     # z[i,t] = 1 if both players in synergy pair i are on field in period t
     z = {(i, t): pulp.LpVariable(f"z_{i}_{t}", cat='Binary')
@@ -362,7 +370,7 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
     prob += (
         pulp.lpSum((pref(p, s) + noise[(p, t, s)]) * y[(p, t, s)]
                    for p in attending for t in range(total_periods) for s in slots)
-        + pulp.lpSum(2 * v[(p, k)] for p in attending for k in unique_types)
+        + pulp.lpSum(4 * meets_variety[p] for p in attending)
         + pulp.lpSum(3 * z[(i, t)] for i in range(len(synergy_pairs)) for t in range(total_periods))
         - pulp.lpSum(10 * w[(i, t)] for i in range(len(split_pairs)) for t in range(total_periods))
         - pulp.lpSum(15 * cv[(p, t, wl)] for p in attending for (t, wl) in consecutive_windows)
@@ -425,12 +433,22 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
             for t in range(total_periods):
                 prob += x[(a, t)] + x[(b, t)] <= 1 + w[(i, t)]
 
-    # Variety bonus: v[p,k] bounded by whether player has actually played type k at all
+    # Variety: v[p,k] can only be 1 if player has actually played type k at least once
     for p in attending:
         for k in unique_types:
             type_slots = [s for s in slots if slot_types[s] == k]
             prob += v[(p, k)] <= pulp.lpSum(
                 y[(p, t, s)] for t in range(total_periods) for s in type_slots)
+
+    # meets_variety[p] = 1 iff player has played at least 2 distinct position types.
+    # Lower bound: activate when any two distinct types are both played.
+    # Upper bound: prevent the solver from claiming the bonus for free when only 1
+    # type is played — without this, mv=1 costs nothing even if sum(v)==1.
+    for p in attending:
+        for i in range(len(unique_types)):
+            for j in range(i + 1, len(unique_types)):
+                prob += meets_variety[p] >= v[(p, unique_types[i])] + v[(p, unique_types[j])] - 1
+        prob += 2 * meets_variety[p] <= pulp.lpSum(v[(p, k)] for k in unique_types)
 
     # Synergy: z[i,t] = 1 iff both pair members play field together in period t
     for i, pair in enumerate(synergy_pairs):
