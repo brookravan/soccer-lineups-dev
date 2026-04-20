@@ -4,3 +4,4 @@ mplsoccer
 pandas
 numpy
 Pillow
+pulp

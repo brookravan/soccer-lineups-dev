@@ -2,6 +2,7 @@ import streamlit as st
 import random
 import json
 import os
+import math
 from datetime import datetime
 
 import streamlit.components.v1 as components
@@ -174,8 +175,8 @@ config_to_save["half_duration"] = half_duration
 config_to_save["sub_marks_raw"] = sub_marks_raw
 # manual_swaps_7v7 is added at download time (main body) so it captures the current run's swaps
 
-@st.cache_data
-def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, durations, gk_split):
+def _greedy_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, durations, gk_split):
+    """Original greedy algorithm. Used as fallback when ILP is unavailable or infeasible."""
     random.seed(seed)
     lineups = []
     con_active_mins = {p: 0 for p in attending}
@@ -192,7 +193,7 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
         gk = quarterly_gks[half_idx * 2 + (1 if block_in_half >= gk_split else 0)]
         is_half_end = (block_in_half == blocks_per_half - 1)
         candidates = [p for p in attending if p != gk]
-        
+
         # Prioritization:
         # 1. Must stay: Finish 10m blocks (relaxed at end-of-half to allow minute balancing).
         # 2. Balanced Minutes: Prioritize players with fewest total minutes to hit the 5m variance goal.
@@ -218,16 +219,16 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
                 if con_active_mins[p] >= 15:
                     is_way_behind = total_mins[p] <= (min(total_mins.values()) + 5)
                     if not (is_half_end and is_way_behind): continue
-                
+
                 split_clash = False
                 for pair in split_pairs:
                     if p in pair and any(partner in selected for partner in pair if partner != p):
                         split_clash = True
-                
+
                 # Prioritize timing: Allow split clash if player is behind on total minutes
                 if split_clash and total_mins[p] < max(total_mins.values()):
                     split_clash = False
-                
+
                 if not split_clash:
                     selected.append(p)
                     for pair in synergy_pairs:
@@ -246,7 +247,6 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
         active = set(selected) | {gk}
         assigned['Bench'] = sorted([p for p in attending if p not in active])
         lineups.append(assigned)
-        # Update position variety tracking for field players
         for slot in FORMATION_CONFIGS[formation_key]['slots']:
             p = assigned[slot]
             if p:
@@ -260,6 +260,224 @@ def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, syner
                 con_bench_mins[p] += duration
                 con_active_mins[p] = 0
     return lineups
+
+
+def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, durations, gk_split):
+    """ILP-based rotation using PuLP. Maximizes position-preference satisfaction across the
+    entire game while enforcing minute-based equity, GK rules, and split/synergy pairs."""
+    import pulp
+
+    durations = list(durations)  # convert tuple for indexing
+    n = len(attending)
+    total_periods = len(durations)
+    blocks_per_half = total_periods // 2
+    total_duration = sum(durations)
+    f_cfg = FORMATION_CONFIGS[formation_key]
+    slots = f_cfg['slots']
+    slot_types = f_cfg['slot_types']
+    n_slots = len(slots)  # 6 for 7v7
+
+    # Integer index per player for safe PuLP variable naming
+    p_idx = {p: i for i, p in enumerate(attending)}
+
+    # GK per period (mirrors the greedy logic exactly)
+    period_gk = []
+    for half_idx in range(2):
+        for block_in_half in range(blocks_per_half):
+            gk_slot = half_idx * 2 + (1 if block_in_half >= gk_split else 0)
+            period_gk.append(quarterly_gks[gk_slot])
+
+    # GK minutes are fixed by the coach's GK selections
+    gk_mins_fixed = {p: sum(durations[t] for t in range(total_periods) if period_gk[t] == p)
+                     for p in attending}
+
+    # Equity: each player targets (n_slots+1) * total_duration / n total minutes
+    # (n_slots field slots + 1 GK slot = 7 active players per period)
+    target_total = (n_slots + 1) * total_duration / n
+    target_field = {p: target_total - gk_mins_fixed[p] for p in attending}
+
+    # 5-minute tolerance matches the original greedy's ~5-minute variance goal
+    tolerance = 5
+    field_lo = {p: max(0.0, target_field[p] - tolerance) for p in attending}
+    field_hi = {p: target_field[p] + tolerance for p in attending}
+
+    # Preference score: rank digit 1→3 pts, 2→2 pts, 3→1 pt
+    def pref(p, s):
+        r = int(player_ranks[p][slot_types[s]])
+        return 4 - r
+
+    # Seed-based tie-breaking noise so different seeds explore different arrangements
+    rng = random.Random(seed)
+    noise = {(p, t, s): rng.uniform(-0.05, 0.05)
+             for p in attending for t in range(total_periods) for s in slots}
+
+    unique_types = sorted(set(slot_types.values()))
+
+    # Precompute consecutive-play windows: for each starting block t, find the minimum
+    # number of consecutive blocks whose total duration first exceeds 15 minutes.
+    # A player cannot be active (field or GK) for all blocks in any such window.
+    # Both field play and GK duty count as active time (matches greedy con_active_mins logic).
+    consecutive_windows = []  # list of (start_block, window_length)
+    for t in range(total_periods):
+        cum = 0
+        for k in range(total_periods - t):
+            cum += durations[t + k]
+            if cum > 15:
+                consecutive_windows.append((t, k + 1))
+                break  # only the minimal violating window per starting block
+
+    # --- BUILD ILP MODEL ---
+    prob = pulp.LpProblem("soccer_7v7", pulp.LpMaximize)
+
+    # x[p,t] = 1 if player p occupies a field slot in period t
+    x = {(p, t): pulp.LpVariable(f"x_{p_idx[p]}_{t}", cat='Binary')
+         for p in attending for t in range(total_periods)}
+
+    # y[p,t,s] = 1 if player p plays slot s in period t
+    y = {(p, t, s): pulp.LpVariable(f"y_{p_idx[p]}_{t}_{s}", cat='Binary')
+         for p in attending for t in range(total_periods) for s in slots}
+
+    # v[p,k] = 1 if player p plays at least one slot of position type k (variety bonus)
+    v = {(p, k): pulp.LpVariable(f"v_{p_idx[p]}_{k}", cat='Binary')
+         for p in attending for k in unique_types}
+
+    # z[i,t] = 1 if both players in synergy pair i are on field in period t
+    z = {(i, t): pulp.LpVariable(f"z_{i}_{t}", cat='Binary')
+         for i in range(len(synergy_pairs)) for t in range(total_periods)}
+
+    # w[i,t] = 1 if split pair i play together in period t (soft; penalized in objective)
+    w = {(i, t): pulp.LpVariable(f"w_{i}_{t}", cat='Binary')
+         for i in range(len(split_pairs)) for t in range(total_periods)}
+
+    # cv[p,t,wl] = 1 if player p is active for all wl consecutive blocks starting at t
+    # "active" means field OR GK — both count toward the 15-minute limit
+    cv = {(p, t, wl): pulp.LpVariable(f"cv_{p_idx[p]}_{t}_{wl}", cat='Binary')
+          for p in attending for (t, wl) in consecutive_windows}
+
+    # --- OBJECTIVE ---
+    # Preference gains (1-3 pts/slot/period) are primary.
+    # Variety (+2/new type) and synergy (+3/joint period) are secondary bonuses.
+    # Split violations (-10) and 15-min consecutive violations (-15) are strongly penalized
+    # but kept soft so the model never becomes infeasible due to equity requirements.
+    prob += (
+        pulp.lpSum((pref(p, s) + noise[(p, t, s)]) * y[(p, t, s)]
+                   for p in attending for t in range(total_periods) for s in slots)
+        + pulp.lpSum(2 * v[(p, k)] for p in attending for k in unique_types)
+        + pulp.lpSum(3 * z[(i, t)] for i in range(len(synergy_pairs)) for t in range(total_periods))
+        - pulp.lpSum(10 * w[(i, t)] for i in range(len(split_pairs)) for t in range(total_periods))
+        - pulp.lpSum(15 * cv[(p, t, wl)] for p in attending for (t, wl) in consecutive_windows)
+    )
+
+    # --- HARD CONSTRAINTS ---
+
+    # Exactly n_slots field players each period
+    for t in range(total_periods):
+        prob += pulp.lpSum(x[(p, t)] for p in attending) == n_slots
+
+    # GK not a field player during their GK periods
+    for t in range(total_periods):
+        prob += x[(period_gk[t], t)] == 0
+
+    # Each slot filled by exactly 1 player
+    for t in range(total_periods):
+        for s in slots:
+            prob += pulp.lpSum(y[(p, t, s)] for p in attending) == 1
+
+    # Player assigned to exactly 1 slot iff they're a field player that period
+    for p in attending:
+        for t in range(total_periods):
+            prob += pulp.lpSum(y[(p, t, s)] for s in slots) == x[(p, t)]
+
+    # Minute-based equity: each player's field minutes within ±5 of their fair target
+    for p in attending:
+        field_mins_expr = pulp.lpSum(durations[t] * x[(p, t)] for t in range(total_periods))
+        prob += field_mins_expr >= field_lo[p]
+        prob += field_mins_expr <= field_hi[p]
+
+    # --- SOFT CONSTRAINTS (penalized in objective, not hard walls) ---
+
+    # 15-minute consecutive play limit: cv[p,t,wl] activates when player is active
+    # (field OR GK) for all wl blocks in a window whose total duration exceeds 15 min.
+    for p in attending:
+        for (t, wl) in consecutive_windows:
+            # Active = field (x variable) for non-GK periods, always 1 for GK periods
+            active_in_window = pulp.lpSum(
+                1 if period_gk[t + j] == p else x[(p, t + j)]
+                for j in range(wl)
+            )
+            # cv activates when all wl blocks in the window are active (active_in_window == wl)
+            prob += cv[(p, t, wl)] >= active_in_window - (wl - 1)
+
+    # Split pairs: w[i,t] activates when both players in a split pair play field together
+    for i, pair in enumerate(split_pairs):
+        a, b = pair[0], pair[1]
+        if a in attending and b in attending:
+            for t in range(total_periods):
+                prob += x[(a, t)] + x[(b, t)] <= 1 + w[(i, t)]
+
+    # Variety bonus: v[p,k] bounded by whether player has actually played type k at all
+    for p in attending:
+        for k in unique_types:
+            type_slots = [s for s in slots if slot_types[s] == k]
+            prob += v[(p, k)] <= pulp.lpSum(
+                y[(p, t, s)] for t in range(total_periods) for s in type_slots)
+
+    # Synergy: z[i,t] = 1 iff both pair members play field together in period t
+    for i, pair in enumerate(synergy_pairs):
+        a, b = pair[0], pair[1]
+        if a in attending and b in attending:
+            for t in range(total_periods):
+                prob += z[(i, t)] <= x[(a, t)]
+                prob += z[(i, t)] <= x[(b, t)]
+                prob += z[(i, t)] >= x[(a, t)] + x[(b, t)] - 1
+        else:
+            # One or both players absent; synergy is impossible
+            for t in range(total_periods):
+                prob += z[(i, t)] == 0
+
+    # Solve (30-second limit; 7v7 has more variables than 5v5 due to 6 field slots)
+    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=30))
+
+    # Accept optimal or feasible-within-time-limit; raise on no solution to trigger fallback
+    if pulp.value(prob.objective) is None:
+        raise RuntimeError(f"ILP produced no solution (status {prob.status})")
+
+    # Extract lineups from solution
+    lineups = []
+    for t in range(total_periods):
+        gk = period_gk[t]
+        assigned = {'GK': gk}
+        for s in slots:
+            assigned[s] = next(
+                (p for p in attending if (pulp.value(y[(p, t, s)]) or 0) > 0.5),
+                None
+            )
+        active = {assigned.get(s) for s in slots} | {gk}
+        active.discard(None)
+        assigned['Bench'] = sorted([p for p in attending if p not in active])
+        lineups.append(assigned)
+
+    # Validate: every slot must be filled
+    for t, lineup in enumerate(lineups):
+        for s in slots:
+            if lineup[s] is None:
+                raise RuntimeError(f"ILP left slot {s} unfilled in period {t}")
+
+    return lineups
+
+
+@st.cache_data
+def generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_key, seed, durations, gk_split):
+    """Generate full-game lineup rotation.
+    Attempts ILP optimization (maximizes preference satisfaction holistically).
+    Falls back to the greedy algorithm if PuLP is unavailable or the model cannot be solved.
+    """
+    try:
+        return _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs,
+                             formation_key, seed, durations, gk_split)
+    except Exception:
+        return _greedy_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs,
+                                formation_key, seed, durations, gk_split)
 
 # --- EXECUTION & SWAPS ---
 lineups = generate_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_pairs, formation_choice, current_seed, tuple(durations), gk_split)
