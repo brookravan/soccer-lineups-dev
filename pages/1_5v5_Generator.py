@@ -243,10 +243,10 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
     field_hi = {p: min(total_periods - gk_period_count[p],
                        math.ceil(target - gk_quarters[p])) for p in attending}
 
-    # Preference score: rank digit 1→3 pts, 2→2 pts, 3→1 pt
+    # Preference score: rank digit 1→5 pts, 2→3 pts, 3→1 pt
     def pref(p, s):
         r = int(player_ranks[p][slot_types[s]])
-        return 4 - r
+        return 7 - 2 * r
 
     # Seed-based tie-breaking noise so different seeds explore different optimal arrangements
     rng = random.Random(seed)
@@ -682,14 +682,14 @@ col_l, col_m, col_r = st.columns([1, 2, 1])
 with col_m:
     st.table(summary_data)
 
-# Preference score: sum of (4 - rank_digit) for every player-slot assignment this game.
-# Max possible = 3 pts/slot × slots × periods (everyone plays their top position every block).
+# Preference score: sum of (7 - 2*rank_digit) for every player-slot assignment this game.
+# Max possible = 5 pts/slot × slots × periods (everyone plays their top position every block).
 _pref_total = sum(
-    4 - int(player_ranks[l[s]][FORMATION_CONFIGS[formation_choice]['slot_types'][s]])
+    7 - 2 * int(player_ranks[l[s]][FORMATION_CONFIGS[formation_choice]['slot_types'][s]])
     for l in lineups for s in FORMATION_CONFIGS[formation_choice]['slots']
     if l.get(s) in player_ranks
 )
-_pref_max = 3 * len(FORMATION_CONFIGS[formation_choice]['slots']) * len(lineups)
+_pref_max = 5 * len(FORMATION_CONFIGS[formation_choice]['slots']) * len(lineups)
 st.caption(f"Preference score: {_pref_total} / {_pref_max}")
 
 # Subtle footer to track version/sync time
