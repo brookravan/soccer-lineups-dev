@@ -321,6 +321,19 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
         prob += field_sum >= field_lo[p]
         prob += field_sum <= field_hi[p]
 
+    # No consecutive bench: each player must be active (field or GK) in at least one of
+    # any two back-to-back periods.  With N ≤ 2*n_slots+1 (i.e. 9 for 5v5) every benched
+    # player can always return next block, so this is enforced as a hard constraint.
+    # For larger rosters some consecutive benching is unavoidable; skip the constraint there
+    # so the model stays feasible and falls back to the greedy gracefully.
+    if n <= 2 * n_slots + 1:
+        for p in attending:
+            for t in range(total_periods - 1):
+                # active[p,t] = 1 (constant) when p is GK that period, else x[p,t]
+                at  = 1 if period_gk[t]     == p else x[(p, t)]
+                at1 = 1 if period_gk[t + 1] == p else x[(p, t + 1)]
+                prob += at + at1 >= 1
+
     # --- SOFT CONSTRAINTS (enforced via objective penalties) ---
 
     # Consecutive play: c[p,t] activates when player p plays 3 periods in a row starting at t

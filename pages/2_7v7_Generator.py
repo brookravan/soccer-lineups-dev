@@ -394,6 +394,16 @@ def _ilp_rotation(attending, quarterly_gks, player_ranks, split_pairs, synergy_p
         prob += field_mins_expr >= field_lo[p]
         prob += field_mins_expr <= field_hi[p]
 
+    # No consecutive bench: each player must be active (field or GK) in at least one of
+    # any two back-to-back periods.  With N ≤ 2*n_slots+1 (i.e. 13 for 7v7) every benched
+    # player can always return next block, so this is enforced as a hard constraint.
+    if n <= 2 * n_slots + 1:
+        for p in attending:
+            for t in range(total_periods - 1):
+                at  = 1 if period_gk[t]     == p else x[(p, t)]
+                at1 = 1 if period_gk[t + 1] == p else x[(p, t + 1)]
+                prob += at + at1 >= 1
+
     # --- SOFT CONSTRAINTS (penalized in objective, not hard walls) ---
 
     # 15-minute consecutive play limit: cv[p,t,wl] activates when player is active
