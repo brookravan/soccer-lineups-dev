@@ -651,6 +651,16 @@ col_l, col_m, col_r = st.columns([1, 2, 1])
 with col_m:
     st.table(summary_data)
 
+# Preference score: sum of (4 - rank_digit) for every player-slot assignment this game.
+# Max possible = 3 pts/slot × slots × periods (everyone plays their top position every block).
+_pref_total = sum(
+    4 - int(player_ranks[l[s]][FORMATION_CONFIGS[formation_choice]['slot_types'][s]])
+    for l in lineups for s in FORMATION_CONFIGS[formation_choice]['slots']
+    if l.get(s) in player_ranks
+)
+_pref_max = 3 * len(FORMATION_CONFIGS[formation_choice]['slots']) * len(lineups)
+st.caption(f"Preference score: {_pref_total} / {_pref_max}")
+
 # Subtle footer to track version/sync time
 last_sync = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime("%Y-%m-%d %H:%M:%S")
 st.markdown(
